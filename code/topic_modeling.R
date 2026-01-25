@@ -2,7 +2,7 @@
 # autora: Georgia Ribeiro
 # codigo 2. classificação temática dos projetos de lei 
 
-# ----- notas ----- 
+# ---- notas ----
 # paleta de cores: ["0b3954","008b00","824c71","1b9aaa","f19953"]
 
 # View a single RColorBrewer palette by specifying its name
@@ -30,6 +30,7 @@ library(tidyverse)
 library(tidytext)
 library(udpipe)
 library(philentropy) # calculo de similaridade - Distância de Jensen-Shannon
+library(RColorBrewer) 
 
 
 # ---- importar base  ---- 
@@ -41,7 +42,7 @@ df_amb = df %>%
   filter(amostra_meioamb == 1) %>%
   select(c("CodigoMateria", "Autor", "DataApresentacao", "Subtemas", "EmentaMateria"))
 
-# ---- CLASSIFICAÇÃO DOS PLS ---- 
+# ---- CLASSIFICAÇÃO DOS PLS ----
 # -- 1 pré processamento -- 
 # - 1.1 remocao de caracteres extras - 
 df_amb$docs <- df_amb$EmentaMateria %>%
@@ -99,15 +100,15 @@ print(which(row_sums == 48)) # rows 65, cod materia = 118684
 print(min(row_sums))
 print(which(row_sums == 2)) # row 50 e 70, cod materia = 114197 e 116261
 
-# -- 4 Rodar Modelo LDA -- 
+# ---- LDA MODEL ----
 lda_model <- LDA(dtm, k = 10, control = list(seed = 1234))
 terms(lda_model, 10)  # Mostra as 10 palavras mais relevantes por tópico
 topics(lda_model)  # Mostra o tópico dominante para cada documento
 perplexity(lda_model, dtm) # Menores valores indicam melhor ajuste. (167.99, com "docs_lemmed". 165.4305, com "docs_clean")
 
 
-# -- 5 avaliacao -- 
-# - Matriz de probabilidades dos tópicos por documento - 
+# -- 1 avaliacao -- 
+# - 1.1 Matriz de probabilidades dos tópicos por documento - 
 theta <- posterior(lda_model)$topics 
 
 # Conferir as probabilidades para os primeiros 5 documentos
@@ -117,7 +118,7 @@ print(theta[1:5, ])
 df_theta_asdf <- as.data.frame(theta)
 write.csv(df_theta_asdf, "data/treated_data/df_theta_lda_posterior_topics_matriz.csv", row.names = FALSE)
 
-# - Tranformar matriz em df com formato long -#
+# - 1.2 Transformar matriz em df com formato long - 
 df_theta <- as.data.frame(as.table(theta))
 colnames(df_theta) <- c("doc_id", "topic", "probability") # Ajustar os nomes das colunas
 df_theta <- arrange(df_theta, doc_id, topic) # Ordenar o data frame por documento e tópico 
@@ -130,13 +131,14 @@ df_theta <- df_theta %>%
 # Salvar resultado
 write.csv(df_theta, "data/treated_data/df_lda_results_alltopics.csv", row.names = FALSE)
 
-# -- 6. analise do topico dominante para nomear e ajustar se necessario -- 
+# - 1.3 Analise do topico dominante para nomear e ajustar se necessario -- 
 
 # - Extraindo a Matriz de tópicos por palavras (Beta) - 
 beta <- posterior(lda_model)$terms
 
 # Definir o número de termos a exibir por tópico
 n <- 5
+
 # Identificar os top 5 termos por tópico
 top5_terms <- apply(beta, 1, function(x) {
   top_indices <- order(x, decreasing = TRUE)[1:n]
@@ -148,6 +150,7 @@ top5_terms <- apply(beta, 1, function(x) {
 
 # Redefinir o número de termos a exibir por tópico
 n <- 15
+
 # Identificar os top 10 termos por tópico
 top15_terms <- apply(beta, 1, function(x) {
   top_indices <- order(x, decreasing = TRUE)[1:n]
@@ -170,11 +173,32 @@ write.csv(df_top15_terms, "data/treated_data/df_lda_top15_terms_by_topic.csv", r
 
 
 # - Plotando top10 termos por tópico - 
-# criando paleta com 10 cores
-library(RColorBrewer) 
+# criando paleta com 10 cores a partir da paleta set3 (pacote colorbrew)
 Set3_10 <- colorRampPalette(brewer.pal(8, "Set3"))(10)
 
+# importar base (atalho)
+df_top15_terms = read.csv("data/treated_data/df_lda_top15_terms_by_topic.csv")
+
 df_top10_terms = df_top15_terms %>%group_by(topic) %>% mutate(ranking = row_number()) %>% filter(ranking <= 10)
+
+## versao na vertical 3 x 4
+df_top10_terms %>%
+  mutate(topic = factor(topic, levels = sort(unique(as.numeric(topic))),
+                        labels = paste("Tópico", sort(unique(as.numeric(topic))))), # Cria fator ordenado com rótulos
+         term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, nrow = 3, ncol= 4, scales = "free") +
+  labs(x = NULL, y = "LDA Beta (Importância do termo)", title = "Top 10 termos por tópico") +
+  theme_minimal() +
+  scale_fill_manual(values = Set3_10) +
+  theme(text = element_text(size = 16), axis.text.y = element_text(size = 18), 
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  coord_flip()+
+  scale_x_reordered()
+ggsave("images/add_document/Top10_terms_topicDominant_LDA_vertical.png", width = 12, height = 14, dpi = 300)
+
+## versao na horizontal 2 x 5
 df_top10_terms %>%
   mutate(topic = factor(topic, levels = sort(unique(as.numeric(topic))),
                         labels = paste("Tópico", sort(unique(as.numeric(topic))))), # Cria fator ordenado com rótulos
